@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:5514142060:android:1da04bf4c6e7a5adcd5349",
+        "android_client_info": {
+          "package_name": "com.auctionhouse.liveapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCo0-7bjXv0C5pMaeNRTsInI46K6uCX_o4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:5514142060:android:12463cc26a69dfd3cd5349",
         "android_client_info": {
           "package_name": "com.example.auction"

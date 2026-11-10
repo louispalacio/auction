@@ -29,14 +29,33 @@ class _HomeScreenState extends State<HomeScreen> {
   String _currentBidder = 'No Bids Yet';
 
   final List<String> _simulatedBidders = [
-    'alex@auction.com',
-    'sarah_bids@gmail.com',
-    'pro_trader@yahoo.com',
-    'collector_99@domain.com'
+    'Alex_Trader',
+    'Sarah_Bids',
+    'Pro_Trader99',
+    'Collector_99'
   ];
 
+  void _resetForm() {
+    _biddingTimer?.cancel();
+    setState(() {
+      _itemNameController.clear();
+      _startingPriceController.clear();
+      _selectedImage = null;
+      _isAuctionActive = false;
+      _isCreating = false;
+      _activeAuctionId = null;
+      _currentBid = 0.0;
+      _currentBidder = 'No Bids Yet';
+    });
+  }
+
   Future<void> _pickImage(ImageSource source) async {
-    final XFile? picked = await _picker.pickImage(source: source, imageQuality: 80);
+    final XFile? picked = await _picker.pickImage(
+      source: source,
+      maxWidth: 600,
+      maxHeight: 600,
+      imageQuality: 70,
+    );
     if (picked != null) {
       setState(() {
         _selectedImage = File(picked.path);
@@ -82,46 +101,34 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    setState(() => _isCreating = true);
+    double price = double.tryParse(_startingPriceController.text.trim()) ?? 0.0;
 
-    try {
-      double price = double.parse(_startingPriceController.text.trim());
+    String newId = await _auctionService.createAuction(
+      name: _itemNameController.text.trim(),
+      startingPrice: price,
+      imageFile: _selectedImage!,
+    );
 
-      String newId = await _auctionService.createAuction(
-        name: _itemNameController.text.trim(),
-        startingPrice: price,
-        imageFile: _selectedImage!,
-      );
+    setState(() {
+      _activeAuctionId = newId;
+      _isAuctionActive = true;
+      _isCreating = false;
+      _currentBid = price;
+      _currentBidder = 'Initial Starting Price';
+    });
 
-      if (!mounted) return;
+    _biddingTimer?.cancel();
+    _biddingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _processNextBid();
+    });
 
-      setState(() {
-        _activeAuctionId = newId;
-        _isAuctionActive = true;
-        _currentBid = price;
-        _currentBidder = 'Initial Starting Price';
-      });
-
-      _biddingTimer?.cancel();
-      _biddingTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-        _processNextBid();
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Auction started successfully!')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error starting auction: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      if (mounted) setState(() => _isCreating = false);
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Auction started live!')),
+    );
   }
 
   void _processNextBid() {
-    if (!_isAuctionActive || _activeAuctionId == null) return;
+    if (!_isAuctionActive) return;
 
     final random = Random();
     double increment = (random.nextInt(15) + 5).toDouble();
@@ -133,29 +140,41 @@ class _HomeScreenState extends State<HomeScreen> {
       _currentBidder = nextBidder;
     });
 
-    _auctionService.placeBid(_activeAuctionId!, updatedBid, nextBidder);
+    if (_activeAuctionId != null) {
+      _auctionService.placeBid(_activeAuctionId!, updatedBid, nextBidder);
+    }
   }
 
   Future<void> _stopAuctionAndSolve() async {
     _biddingTimer?.cancel();
-    if (_activeAuctionId != null) {
-      await _auctionService.finalizeAuction(
-        _activeAuctionId!,
-        _itemNameController.text,
-        _currentBid,
-        _currentBidder,
-      );
+
+    double soldBid = _currentBid;
+    String soldBidder = _currentBidder;
+
+    try {
+      if (_activeAuctionId != null) {
+        await _auctionService.finalizeAuction(
+          _activeAuctionId!,
+          _itemNameController.text.trim(),
+          _currentBid,
+          _currentBidder,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error finalizing auction: $e');
+    } finally {
+      // Form refresh is guaranteed to run here even if network errors happen
+      if (mounted) {
+        _resetForm();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Auction Closed! Sold to $soldBidder for \$${soldBid.toStringAsFixed(2)}. Form refreshed!',
+            ),
+          ),
+        );
+      }
     }
-
-    if (!mounted) return;
-
-    setState(() {
-      _isAuctionActive = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Auction Closed! Sold to $_currentBidder for \$${_currentBid.toStringAsFixed(2)}. Winner notified!')),
-    );
   }
 
   @override
@@ -172,6 +191,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Live Auction House'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'New Item / Reset',
+            onPressed: _resetForm,
+          ),
           IconButton(
             icon: const Icon(Icons.dashboard),
             onPressed: () {
@@ -193,32 +217,39 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             GestureDetector(
-              onTap: _showImageSourceDialog,
+              onTap: _isAuctionActive ? null : _showImageSourceDialog,
               child: Container(
-                height: 180,
+                height: 200,
+                width: double.infinity,
                 decoration: BoxDecoration(
-                  color: Colors.grey[200],
+                  color: Colors.black12,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.deepPurple, width: 2),
                 ),
                 child: _selectedImage != null
                     ? ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.file(_selectedImage!, fit: BoxFit.cover),
-                      )
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.file(
+                    _selectedImage!,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fit: BoxFit.contain,
+                  ),
+                )
                     : const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add_a_photo, size: 50, color: Colors.deepPurple),
-                          SizedBox(height: 8),
-                          Text('Tap to capture/select item image'),
-                        ],
-                      ),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_a_photo, size: 50, color: Colors.deepPurple),
+                    SizedBox(height: 8),
+                    Text('Tap to capture/select item image'),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _itemNameController,
+              enabled: !_isAuctionActive,
               decoration: const InputDecoration(
                 labelText: 'Auction Item Name',
                 border: OutlineInputBorder(),
@@ -227,6 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: _startingPriceController,
+              enabled: !_isAuctionActive,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Starting Bid Amount (\$)',
@@ -237,17 +269,16 @@ class _HomeScreenState extends State<HomeScreen> {
             _isCreating
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton.icon(
-                    onPressed: _isAuctionActive ? null : _startAuction,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Start Live 5-Second Auction'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
+              onPressed: _isAuctionActive ? null : _startAuction,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Start Live 5-Second Auction'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
             const SizedBox(height: 20),
-
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

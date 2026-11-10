@@ -4,6 +4,7 @@ class AuctionItem {
   final String id;
   final String name;
   final String imageUrl;
+  final double startingPrice;
   final double currentBid;
   final String highestBidder;
   final String sellerId;
@@ -14,6 +15,7 @@ class AuctionItem {
     required this.id,
     required this.name,
     required this.imageUrl,
+    required this.startingPrice,
     required this.currentBid,
     required this.highestBidder,
     required this.sellerId,
@@ -22,16 +24,20 @@ class AuctionItem {
   });
 
   factory AuctionItem.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>? ?? {};
     return AuctionItem(
       id: doc.id,
       name: data['name'] ?? '',
       imageUrl: data['imageUrl'] ?? '',
+      // Fallback to currentBid if startingPrice field is missing in older documents
+      startingPrice: (data['startingPrice'] ?? data['currentBid'] ?? 0.0).toDouble(),
       currentBid: (data['currentBid'] ?? 0.0).toDouble(),
       highestBidder: data['highestBidder'] ?? 'No bids',
       sellerId: data['sellerId'] ?? '',
       isSold: data['isSold'] ?? false,
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      createdAt: data['createdAt'] != null
+          ? (data['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 }
